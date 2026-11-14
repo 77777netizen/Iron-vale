@@ -1,0 +1,7 @@
+{
+  "appId": "com.ironvale.game",
+  "appName": "Iron Vale",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "backgroundColor": "#0b0d0f"
+}
