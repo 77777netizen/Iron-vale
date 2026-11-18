@@ -1471,6 +1471,21 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
   window.addEventListener("resize", function () { resize(); checkOrient(); }); window.addEventListener("orientationchange", function () { setTimeout(function () { resize(); checkOrient(); }, 200); });
 
   function metal(c, r, m) { return stdMat({ color: c, roughness: r === undefined ? 0.45 : r, metalness: m === undefined ? 0.6 : m, envMapIntensity: 0.9 }); }
+  function texGlove(base) {
+    var c = mkCanvas(128, 128), x = c.getContext("2d"), i;
+    x.fillStyle = base; x.fillRect(0, 0, 128, 128);
+    for (i = 0; i < 128; i += 3) { x.fillStyle = "rgba(255,255,255,0.05)"; x.fillRect(i, 0, 1, 128); x.fillStyle = "rgba(0,0,0,0.12)"; x.fillRect(0, i, 128, 1); }
+    blotch(x, 128, 128, 14, 8, 30, function () { return rnd() < 0.5 ? [255, 255, 255, 0.05] : [0, 0, 0, 0.18]; });
+    x.strokeStyle = "rgba(210,210,200,0.25)"; x.setLineDash([4, 3]); x.lineWidth = 1; x.strokeRect(6, 6, 116, 116); x.setLineDash([]);
+    grain(x, 128, 128, 26); return c;
+  }
+  function texSleeve(base) {
+    var c = mkCanvas(128, 128), x = c.getContext("2d"), i; x.fillStyle = base; x.fillRect(0, 0, 128, 128);
+    blotch(x, 128, 128, 26, 8, 26, function () { return rnd() < 0.5 ? [30, 36, 20, 0.35] : [150, 140, 100, 0.22]; });
+    for (i = 0; i < 128; i += 2) { x.fillStyle = "rgba(0,0,0,0.07)"; x.fillRect(i, 0, 1, 128); }
+    for (i = 0; i < 7; i++) { var y = 12 + i * 18 + rnd() * 6; x.fillStyle = "rgba(0,0,0,0.22)"; x.fillRect(0, y, 128, 3); x.fillStyle = "rgba(255,255,255,0.08)"; x.fillRect(0, y + 3, 128, 2); }
+    grain(x, 128, 128, 26); return c;
+  }
   function buildViewModels() {
     gunGroup = new THREE.Group();
     var steel = stdMat({ map: T.gmDark, roughness: 0.4, metalness: 0.75, envMapIntensity: 1 }),
@@ -1483,10 +1498,36 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     function B(g, w, h, d, x, y, z, m, rx, ry, rz) { var mm = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); mm.position.set(x, y, z); if (rx) mm.rotation.x = rx; if (ry) mm.rotation.y = ry; if (rz) mm.rotation.z = rz; g.add(mm); return mm; }
     function C(g, r, len, x, y, z, m, rz) { var mm = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 14), m); if (rz) mm.rotation.z = PI / 2; else mm.rotation.x = PI / 2; mm.position.set(x, y, z); g.add(mm); return mm; }
     var sl = OPS[opIdx].sleeve, gl = OPS[opIdx].glove;
-    function arms(g, rp, lp, lg) {
-      var sm = stdMat({ color: sl, roughness: 0.9 }), gm = stdMat({ color: gl, roughness: 0.8 });
-      B(g, 0.09, 0.09, 0.42, rp[0], rp[1], rp[2], sm, rp[3], rp[4], rp[5]); B(g, 0.1, 0.1, 0.11, rp[6], rp[7], rp[8], gm);
-      lg = lg || g; B(lg, 0.09, 0.09, 0.42, lp[0], lp[1], lp[2], sm, lp[3], lp[4], lp[5]); B(lg, 0.1, 0.1, 0.11, lp[6], lp[7], lp[8], gm);
+    function arms(g, rp, lp, lg, lk) {
+      var sm = stdMat({ map: toTex(texSleeve("#" + ("000000" + sl.toString(16)).slice(-6)), 1, 1), roughness: 0.95 }),
+        gm = stdMat({ map: toTex(texGlove("#" + ("000000" + gl.toString(16)).slice(-6)), 1, 1), bumpMap: T.grip, bumpScale: 0.5, roughness: 0.88 }),
+        pad = stdMat({ color: 0x08090a, roughness: 0.5, metalness: 0.2 }), strap = stdMat({ color: 0x46483f, roughness: 0.9 }), stitch = stdMat({ color: 0x6a6a62, roughness: 0.9 });
+      function seg(h, w, hh, d, x, y, z, rx, m) { return B(h, w, hh, d, x, y, z, m || gm, rx || 0); }
+      // one gloved hand. kind "grip": fingers wrap down a pistol grip. kind "under": fingers wrap up the side of a handguard.
+      function hand(g2, p, kind) {
+        var h = new THREE.Group(), n = new THREE.Group(), i, side = kind === "side", left = kind === "under" || side, tx = side ? 0.05 : left ? 0.05 : -0.05;
+        seg(n, 0.082, 0.03, 0.095, 0, 0.0, 0.0, 0);
+        seg(n, 0.086, 0.012, 0.03, 0, 0.012, 0.04, 0, stitch);
+        for (i = 0; i < 4; i++) {
+          var fx = (left ? 0.03 - i * 0.02 : -0.03 + i * 0.02), f = new THREE.Group(), L = [0.04, 0.034, 0.028], cur = [0.2, 1.1, 1.0], zz = -0.05, yy = 0.0, a = 0, k;
+          for (k = 0; k < 3; k++) {
+            a += cur[k] * (left ? 0.85 : 1); var s2 = seg(f, 0.019, 0.017, L[k], 0, 0, 0, 0);
+            s2.position.set(0, yy - Math.sin(a) * L[k] * 0.5, zz - Math.cos(a) * L[k] * 0.5); s2.rotation.x = a; zz -= Math.cos(a) * L[k]; yy -= Math.sin(a) * L[k];
+            seg(f, 0.0195, 0.003, 0.004, 0, 0, 0, 0, stitch).position.set(0, yy + 0.0095, zz + L[k] * 0.5 * Math.cos(a));
+          }
+          f.position.set(fx, 0.002, 0); n.add(f);
+        }
+        seg(n, 0.076, 0.012, 0.04, 0, 0.022, -0.035, 0.1, pad); for (i = 0; i < 4; i++) seg(n, 0.016, 0.01, 0.014, -0.03 + i * 0.02, 0.03, -0.045, 0.1, pad);
+        var th = new THREE.Group(); seg(th, 0.02, 0.02, 0.04, 0, 0, -0.02, 0); seg(th, 0.018, 0.018, 0.032, 0, 0, -0.057, -0.1); th.position.set(tx, 0.012, -0.01); th.rotation.y = left ? -0.35 : 0.35; n.add(th);
+        n.rotation.set(0, side ? 0 : left ? -0.7 : 0.1, side ? PI / 2 : left ? PI : 0); h.add(n);
+        var cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.035, 0.05, 14), gm); cuff.rotation.x = PI / 2; cuff.position.set(0, 0.0, 0.082); h.add(cuff);
+        seg(h, 0.092, 0.012, 0.03, 0, 0.02, 0.085, 0, strap);
+        var sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.037, 0.031, 0.2, 14), sm); sleeve.rotation.x = PI / 2; sleeve.position.set(0, 0.0, 0.2); h.add(sleeve);
+        var rim = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.014, 14), sm); rim.rotation.x = PI / 2; rim.position.set(0, 0, 0.1); h.add(rim);
+        h.position.set(p[6], p[7], p[8]); h.rotation.set(p[3], p[4], p[5]); g2.add(h);
+      }
+      hand(g, rp, "grip", false);
+      hand(lg || g, lp, "under", true);
     }
 
     // WREN: two-tone pistol with a moving slide, gold accents and tritium sights
@@ -1502,31 +1543,37 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     pistol.userData = { slide: slide, slideTravel: 0.07, port: [0.03, 0.04, 0.0], mag: pmag };
     arms(pistol, [0.07, -0.2, 0.28, -0.35, -0.12, 0, 0.03, -0.12, 0.1], [-0.1, -0.22, 0.2, -0.3, 0.4, 0, -0.02, -0.13, 0.0]);
 
-    // HARROW: tan polymer carbine with rails, red dot, orange accent, charging handle and drop mag
+    // HARROW: matte black carbine, full-length slotted rail, M-LOK handguard, ring holo sight, brake, collapsible stock
     var rifle = new THREE.Group(), bolt = new THREE.Group(), rmag = new THREE.Group(); rifle.add(bolt); rifle.add(rmag);
-    B(rifle, 0.066, 0.07, 0.34, 0, 0.015, 0.02, poly); B(rifle, 0.062, 0.05, 0.2, 0, -0.04, 0, steel); B(rifle, 0.07, 0.07, 0.32, 0, 0.01, -0.3, poly);
-    B(rifle, 0.03, 0.008, 0.34, 0, 0.056, -0.28, steel); for (var r = 0; r < 6; r++) B(rifle, 0.036, 0.006, 0.01, 0, 0.061, -0.14 - r * 0.05, steel);
-    B(rifle, 0.0715, 0.012, 0.3, 0, -0.012, -0.3, orange);
-    C(rifle, 0.013, 0.2, 0, 0.012, -0.57, steel); C(rifle, 0.02, 0.07, 0, 0.012, -0.7, steel); B(rifle, 0.046, 0.006, 0.012, 0, 0.012, -0.69, black); B(rifle, 0.046, 0.006, 0.012, 0, 0.012, -0.71, black);
-    // ring holo sight on the top rail: base, two posts, round hood, glass and a red reticle
-    B(rifle, 0.05, 0.014, 0.1, 0, 0.066, -0.04, steel); B(rifle, 0.058, 0.01, 0.03, 0, 0.074, -0.04, steel2);
-    B(rifle, 0.008, 0.05, 0.03, -0.026, 0.092, -0.04, steel); B(rifle, 0.008, 0.05, 0.03, 0.026, 0.092, -0.04, steel);
-    var holoRing = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.0062, 8, 26), steel2); holoRing.position.set(0, 0.112, -0.04); rifle.add(holoRing);
-    var holoRim = new THREE.Mesh(new THREE.TorusGeometry(0.041, 0.0035, 6, 26), black); holoRim.position.set(0, 0.112, -0.05); rifle.add(holoRim);
-    var holoGlass = new THREE.Mesh(new THREE.CircleGeometry(0.031, 22), new THREE.MeshBasicMaterial({ color: 0x9fd6ff, transparent: true, opacity: 0.16, depthWrite: false })); holoGlass.position.set(0, 0.112, -0.042); rifle.add(holoGlass);
-    var retR = new THREE.Mesh(new THREE.RingGeometry(0.0085, 0.0105, 20), glowR); retR.position.set(0, 0.112, -0.04); rifle.add(retR);
-    var retD = new THREE.Mesh(new THREE.CircleGeometry(0.0021, 8), glowR); retD.position.set(0, 0.112, -0.0395); rifle.add(retD);
-    B(rifle, 0.004, 0.012, 0.012, 0, 0.158, -0.04, steel);
-    // rails on the handguard sides, flip-up back sight, angled foregrip and a small flashlight
-    for (var rr = 0; rr < 5; rr++) { B(rifle, 0.006, 0.014, 0.012, 0.037, 0.012, -0.2 - rr * 0.045, steel); B(rifle, 0.006, 0.014, 0.012, -0.037, 0.012, -0.2 - rr * 0.045, steel); }
-    B(rifle, 0.03, 0.1, 0.036, 0, -0.1, -0.42, gripM, 0.2); B(rifle, 0.036, 0.016, 0.05, 0, -0.045, -0.42, steel);
-    C(rifle, 0.011, 0.07, 0.044, 0.012, -0.33, steel2, true); B(rifle, 0.012, 0.012, 0.01, 0.044, 0.012, -0.37, glowR);
-    B(rifle, 0.042, 0.14, 0.06, 0, -0.13, 0.075, gripM, -0.3);
-    B(rmag, 0.045, 0.17, 0.07, 0, -0.13, -0.06, steel, 0.12); B(rmag, 0.048, 0.016, 0.075, 0, -0.222, -0.08, orange, 0.12);
-    B(rifle, 0.05, 0.07, 0.26, 0, -0.005, 0.3, poly); B(rifle, 0.054, 0.03, 0.12, 0, 0.04, 0.32, gripM); B(rifle, 0.054, 0.09, 0.02, 0, -0.02, 0.44, gripM);
-    B(bolt, 0.02, 0.025, 0.05, 0.04, 0.03, 0.04, steel); B(rifle, 0.004, 0.03, 0.07, 0.034, 0.025, 0.0, black);
-    rifle.userData = { bolt: bolt, port: [0.04, 0.03, 0.0], mag: rmag };
-    arms(rifle, [0.08, -0.2, 0.25, -0.35, -0.1, 0, 0.04, -0.14, 0.1], [-0.08, -0.17, -0.15, -0.2, 0.2, 0, -0.01, -0.07, -0.28]);
+    var blk = stdMat({ color: 0x0f1012, roughness: 0.7, metalness: 0.1, envMapIntensity: 0.3 }), blk2 = stdMat({ color: 0x070708, roughness: 0.6, metalness: 0.2, envMapIntensity: 0.3 });
+    B(rifle, 0.064, 0.058, 0.36, 0, 0.02, 0.02, blk); B(rifle, 0.062, 0.05, 0.26, 0, -0.035, 0.05, blk2); B(rifle, 0.052, 0.034, 0.08, 0, -0.07, -0.04, blk2);
+    B(rifle, 0.034, 0.012, 0.62, 0, 0.056, -0.14, steel);
+    for (var r = 0; r < 15; r++) B(rifle, 0.038, 0.0045, 0.008, 0, 0.0625, 0.14 - r * 0.043, black);
+    B(rifle, 0.072, 0.072, 0.34, 0, 0.012, -0.31, blk);
+    for (var ml = 0; ml < 6; ml++) { B(rifle, 0.004, 0.02, 0.034, 0.0365, 0.014, -0.17 - ml * 0.052, black); B(rifle, 0.004, 0.02, 0.034, -0.0365, 0.014, -0.17 - ml * 0.052, black); B(rifle, 0.028, 0.004, 0.03, 0, -0.0245, -0.17 - ml * 0.052, black); }
+    B(rifle, 0.03, 0.01, 0.3, 0, -0.027, -0.31, steel); B(rifle, 0.012, 0.024, 0.07, 0.038, 0.012, -0.43, steel); B(rifle, 0.012, 0.024, 0.07, -0.038, 0.012, -0.43, steel);
+    C(rifle, 0.012, 0.24, 0, 0.012, -0.58, steel); B(rifle, 0.03, 0.042, 0.034, 0, 0.038, -0.5, steel2); B(rifle, 0.004, 0.04, 0.004, 0, 0.075, -0.5, steel); B(rifle, 0.016, 0.006, 0.01, 0, 0.056, -0.5, steel);
+    C(rifle, 0.021, 0.085, 0, 0.012, -0.71, blk2); for (var mb = 0; mb < 3; mb++) C(rifle, 0.0225, 0.008, 0, 0.012, -0.685 - mb * 0.022, black); B(rifle, 0.046, 0.005, 0.014, 0, 0.012, -0.72, black); B(rifle, 0.005, 0.046, 0.014, 0, 0.012, -0.72, black);
+    // ring holo sight: base, housing, tall round hood with glass and a red ring reticle
+    B(rifle, 0.052, 0.014, 0.11, 0, 0.066, -0.02, steel); B(rifle, 0.062, 0.05, 0.085, 0, 0.096, -0.03, blk2); B(rifle, 0.066, 0.008, 0.095, 0, 0.123, -0.03, blk2);
+    B(rifle, 0.007, 0.07, 0.03, -0.03, 0.14, -0.03, blk2); B(rifle, 0.007, 0.07, 0.03, 0.03, 0.14, -0.03, blk2);
+    var holoRing = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.0075, 10, 30), blk2); holoRing.position.set(0, 0.168, -0.03); rifle.add(holoRing);
+    var holoRim = new THREE.Mesh(new THREE.TorusGeometry(0.0435, 0.0035, 6, 30), steel); holoRim.position.set(0, 0.168, -0.04); rifle.add(holoRim);
+    var holoGlass = new THREE.Mesh(new THREE.CircleGeometry(0.033, 24), new THREE.MeshBasicMaterial({ color: 0x9fd6ff, transparent: true, opacity: 0.14, depthWrite: false })); holoGlass.position.set(0, 0.168, -0.033); rifle.add(holoGlass);
+    var retR = new THREE.Mesh(new THREE.RingGeometry(0.0085, 0.0105, 22), glowR); retR.position.set(0, 0.168, -0.03); rifle.add(retR);
+    var retD = new THREE.Mesh(new THREE.CircleGeometry(0.0021, 8), glowR); retD.position.set(0, 0.168, -0.0295); rifle.add(retD);
+    B(rifle, 0.034, 0.016, 0.02, 0, 0.098, 0.016, black);
+    // receiver detail: flip-up rear sight, ejection port, dust cover, selector, trigger and guard
+    B(rifle, 0.03, 0.022, 0.02, 0, 0.07, 0.19, steel2); B(rifle, 0.004, 0.02, 0.004, -0.008, 0.088, 0.19, steel); B(rifle, 0.004, 0.02, 0.004, 0.008, 0.088, 0.19, steel);
+    B(rifle, 0.004, 0.026, 0.075, 0.033, 0.03, -0.0, black); B(rifle, 0.006, 0.006, 0.075, 0.034, 0.044, -0.0, steel2);
+    B(rifle, 0.012, 0.014, 0.024, -0.034, -0.004, 0.09, steel2); B(rifle, 0.006, 0.03, 0.01, 0, -0.07, 0.07, steel, 0.3); B(rifle, 0.008, 0.03, 0.1, 0, -0.1, 0.045, steel2); B(rifle, 0.008, 0.03, 0.01, 0, -0.082, 0.098, steel2);
+    B(rifle, 0.042, 0.14, 0.06, 0, -0.14, 0.11, stdMat({ color: 0x0a0a0b, bumpMap: T.grip, bumpScale: 1.2, roughness: 0.9 }), -0.3); B(rifle, 0.05, 0.012, 0.07, 0, -0.205, 0.145, blk2, -0.3);
+    B(rmag, 0.042, 0.11, 0.07, 0, -0.14, -0.04, blk2, 0.08); B(rmag, 0.042, 0.09, 0.07, 0, -0.235, -0.025, blk2, 0.26); B(rmag, 0.046, 0.012, 0.076, 0, -0.285, -0.01, steel, 0.26); B(rmag, 0.044, 0.006, 0.07, 0, -0.17, -0.04, steel, 0.08);
+    // stock
+    C(rifle, 0.021, 0.14, 0, 0.0, 0.27, blk2); B(rifle, 0.052, 0.08, 0.14, 0, -0.002, 0.34, blk); B(rifle, 0.046, 0.03, 0.1, 0, 0.04, 0.33, blk2); B(rifle, 0.058, 0.1, 0.02, 0, -0.01, 0.42, blk2); B(rifle, 0.014, 0.024, 0.03, 0, -0.045, 0.27, steel2);
+    B(bolt, 0.022, 0.026, 0.05, 0.0, 0.07, 0.17, steel2); B(bolt, 0.012, 0.014, 0.03, 0.0, 0.052, 0.17, black);
+    rifle.userData = { bolt: bolt, port: [0.036, 0.03, 0.0], mag: rmag };
+    arms(rifle, [0.075, -0.2, 0.26, -0.35, -0.1, 0, 0.05, -0.145, 0.11], [-0.1, -0.12, -0.1, -0.1, 0.25, 0, -0.082, -0.006, -0.3], null, "side");
 
     // BULWARK: walnut pump shotgun with side-saddle shells, brass cap and a pumping forend
     var shot = new THREE.Group(), pump = new THREE.Group(); shot.add(pump);
@@ -1572,12 +1619,6 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     B(slide, 0.012, 0.02, 0.02, 0, 0.056, 0.135, steel);
     B(pistol, 0.034, 0.022, 0.06, 0, -0.045, -0.105, black); B(pistol, 0.008, 0.008, 0.008, 0, -0.045, -0.138, glowR);
     C(pistol, 0.013, 0.05, 0, 0.03, -0.19, steel2); C(pistol, 0.021, 0.17, 0, 0.03, -0.29, steel); C(pistol, 0.023, 0.012, 0, 0.03, -0.205, gold); C(pistol, 0.023, 0.012, 0, 0.03, -0.37, gold);
-    // Harrow: M416-style carbine with M-LOK slots, angled grip, taped mags and a flip sight
-    for (var hv = 0; hv < 5; hv++) B(rifle, 0.0735, 0.014, 0.024, 0, 0.02, -0.17 - hv * 0.055, black);
-    B(rifle, 0.02, 0.03, 0.03, 0, 0.042, -0.5, steel); B(rifle, 0.004, 0.034, 0.004, 0, 0.076, -0.5, steel); B(rifle, 0.026, 0.006, 0.006, 0, 0.058, -0.5, steel);
-    B(rifle, 0.03, 0.11, 0.034, 0, -0.085, -0.28, gripM, 0.3); B(rifle, 0.046, 0.025, 0.14, 0, 0.06, 0.3, poly);
-    B(rmag, 0.045, 0.17, 0.07, 0, -0.13, -0.15, steel, 0.12); B(rmag, 0.048, 0.03, 0.14, 0, -0.1, -0.1, black, 0.12);
-    B(rifle, 0.004, 0.016, 0.03, -0.036, 0.0, 0.06, black); B(rifle, 0.03, 0.02, 0.012, 0, 0.082, 0.1, steel);
     // Bulwark: rail, ghost-ring sight, heat shield, trigger guard
     B(shot, 0.022, 0.008, 0.28, 0, 0.049, 0.12, steel); B(shot, 0.03, 0.02, 0.01, 0, 0.062, 0.22, steel); B(shot, 0.03, 0.012, 0.3, 0, 0.048, -0.3, black);
     B(shot, 0.01, 0.012, 0.1, 0, -0.062, 0.12, steel); B(shot, 0.01, 0.03, 0.01, 0, -0.047, 0.07, steel);
@@ -2476,7 +2517,7 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     chute.position.y = 0.0; g.add(chute);
     // coloured smoke plume
     var smoke = [];
-    for (i = 0; i < 9; i++) { var sm = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.smoke, transparent: true, opacity: 0, depthWrite: false, color: 0xff2a18, fog: false })); g.add(sm); smoke.push(sm); }
+    for (i = 0; i < 14; i++) { var sm = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.smoke, transparent: true, opacity: 0, depthWrite: false, color: 0xff2412, fog: false })); g.add(sm); smoke.push(sm); }
     g.scale.setScalar(1.3); g.userData = { chute: chute, smoke: smoke };
     return g;
   }
@@ -3064,8 +3105,8 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     cyl(0.36, 0.36, 0.95, 14, M.barnWood, x, 0.475, z); cyl(0.4, 0.4, 0.07, 14, M.steel, x, 0.2, z, { solid: false }); cyl(0.4, 0.4, 0.07, 14, M.steel, x, 0.75, z, { solid: false });
     colliders.push({ x: x, z: z, w: 0.75, d: 0.75, ht: 0.95 });
   }
-  function roadPlane(mat, x, z, w, d, y) {
-    var g = new THREE.PlaneGeometry(w, d), uv = g.attributes.uv, i; for (i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 3, uv.getY(i) * d / 3);
+  function roadPlane(mat, x, z, w, d, y, rep) {
+    var g = new THREE.PlaneGeometry(w, d), uv = g.attributes.uv, i, k = rep || 1; for (i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / (3 * k), uv.getY(i) * d / (3 * k));
     var m = new THREE.Mesh(g, mat); m.rotation.x = -PI / 2; m.position.set(x, y || 0.03, z); m.receiveShadow = true; m.material.userData = m.material.userData || {}; world.add(m); return m;
   }
   function fountain(x, z) {
@@ -3094,6 +3135,22 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
   function cypress(x, z, s) {
     var m = new THREE.Mesh(new THREE.ConeGeometry(0.9 * s, 7 * s, 8), new THREE.MeshStandardMaterial({ color: 0x2f4a2b, roughness: 0.95 })); m.position.set(x, 3.5 * s, z); m.castShadow = true; world.add(m);
   }
+  function mountains(R, n, base) {
+    var i, j, gm, pos, v, col, hz = new THREE.Color(0xc9d8e4);
+    for (i = 0; i < n; i++) {
+      var a = (i / n) * PI * 2 + R() * 0.25, rad = 150 + R() * 30, sx = 55 + R() * 45, sy = 26 + R() * 30, sz = 40 + R() * 25;
+      gm = new THREE.SphereGeometry(1, 18, 10); pos = gm.attributes.position; col = [];
+      for (j = 0; j < pos.count; j++) {
+        var px = pos.getX(j), py = pos.getY(j), pz = pos.getZ(j), nz = 1 + (Math.sin(px * 5.1 + i) * Math.cos(pz * 4.3 + i * 2) * 0.22) + (R() - 0.5) * 0.12;
+        if (py < 0) py = 0; pos.setXYZ(j, px * nz, py * nz * (1 + Math.abs(Math.sin(px * 3 + i)) * 0.25), pz * nz);
+        var h = Math.min(1, py), c = new THREE.Color(base[0]).lerp(new THREE.Color(base[1]), h * h).lerp(hz, 0.38 - h * 0.1);
+        col.push(c.r, c.g, c.b);
+      }
+      gm.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); gm.computeVertexNormals();
+      var mm = new THREE.Mesh(gm, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true })); mm.material.userData = { own: true };
+      mm.scale.set(sx, sy, sz); mm.position.set(Math.cos(a) * rad, -1, Math.sin(a) * rad); mm.rotation.y = R() * 6; world.add(mm);
+    }
+  }
   function skyClouds(R, n, col) {
     for (var i = 0; i < n; i++) {
       var a = R() * PI * 2, el = 0.35 + R() * 0.7, r = 168, mat = new THREE.SpriteMaterial({ map: T.cloud, transparent: true, depthWrite: false, fog: false, opacity: 0.8 + R() * 0.2, color: col || 0xffffff });
@@ -3111,10 +3168,10 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     village: [[0, "#3a74c0"], [0.3, "#6aa4e0"], [0.42, "#b2d2ee"], [0.48, "#dbe8f2"], [0.5, "#eef2ee"], [0.53, "#6f7a52"], [1, "#3e4630"]] };
   SKIES_REAL.town = SKIES_REAL_T.town; SKIES_REAL.village = SKIES_REAL_T.village;
   ATMOS.town = { fog: 0x101424, near: 8, far: 62, hemiSky: 0x5a6ea0, hemiGround: 0x1c1a20, hemiInt: 0.46, sunCol: 0x8aa0d8, sunInt: 0.62, sunPos: [-34, 40, -24], exposure: 1.5, moon: 0xdfe8ff };
-  ATMOS_REAL.town = { fog: 0xd2e0ec, near: 70, far: 230, hemiSky: 0xcfe2f6, hemiGround: 0x8a7a62, hemiInt: 0.62, sunCol: 0xfff0d6, sunInt: 2.3, sunPos: [-34, 40, -22], exposure: 0.98 };
+  ATMOS_REAL.town = { fog: 0xd2e0ec, near: 70, far: 230, hemiSky: 0xcfe2f6, hemiGround: 0x8a7a62, hemiInt: 1.0, sunCol: 0xfff0d6, sunInt: 2.1, sunPos: [-34, 40, -22], exposure: 0.98 };
   SKIES.village = [[0, "#050a0a"], [0.3, "#0c1c1c"], [0.42, "#233a36"], [0.48, "#38544a"], [0.5, "#456a5a"], [0.53, "#0a140e"], [1, "#040806"]];
   ATMOS.village = { fog: 0x0e1a18, near: 7, far: 56, hemiSky: 0x5a8a90, hemiGround: 0x142018, hemiInt: 0.46, sunCol: 0x9ac0c0, sunInt: 0.6, sunPos: [30, 40, -30], exposure: 1.5, moon: 0xcfe8e0 };
-  ATMOS_REAL.village = { fog: 0xd6e4ec, near: 70, far: 240, hemiSky: 0xcfe4f6, hemiGround: 0x6e7a4a, hemiInt: 0.62, sunCol: 0xfff0d2, sunInt: 2.2, sunPos: [30, 40, -26], exposure: 1.0 };
+  ATMOS_REAL.village = { fog: 0xd6e4ec, near: 70, far: 240, hemiSky: 0xcfe4f6, hemiGround: 0x6e7a4a, hemiInt: 1.0, sunCol: 0xfff0d2, sunInt: 2.0, sunPos: [30, 40, -26], exposure: 1.0 };
   function townSky(id) { makeSky(LOOK() === "real" ? SKIES_REAL[id] : SKIES[id]); }
 
   function buildTown() {
@@ -3177,6 +3234,7 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     // roof terrace tree-in-pot and a few cypresses by the walls
     [[-34.5, -10], [34.5, 9], [-8, -35], [9, 35], [-34.5, 20], [34.5, -34]].forEach(function (p) { cypress(p[0], p[1], 1 + R() * 0.3); });
     townSkyline(R, 16, 7);
+    mountains(R, 9, [0x6a7a5a, 0x8a8f92]);
     skyClouds(R, 9);
     flushTown();
   }
@@ -3241,7 +3299,7 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     groundPlane(M.vGrass);
     // dirt lanes and a cobbled yard in front of the tavern
     roadPlane(M.dirtRoad, 0, 0, 7, 76, 0.02); roadPlane(M.dirtRoad, 0, 1.5, 76, 6, 0.022);
-    roadPlane(M.cobble1, 13, 2, 14, 12, 0.035);
+    roadPlane(M.cobble, 13, 2, 14, 12, 0.035, 80);
     roadPlane(M.dirtRoad, -22, -14.5, 10, 3, 0.024); roadPlane(M.dirtRoad, 22, -15, 10, 3, 0.024); roadPlane(M.dirtRoad, -24, 13.5, 10, 3, 0.024); roadPlane(M.dirtRoad, 24, 14.5, 12, 3, 0.024);
     // low stone boundary walls
     sidesWalls(1.5, M.ashlar, 2);
@@ -3288,6 +3346,7 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
     [[-34, -9], [33, -4], [-5, 34], [11, 33], [-34, 34], [34, -20], [3, -18], [-12, 7], [28, 8]].forEach(function (p) { if (!blockedAt(p[0], p[1], 1.5)) vtree(p[0], p[1], 0.85 + R() * 0.5); });
     for (i = 0; i < 18; i++) { var px = (R() - 0.5) * 66, pz = (R() - 0.5) * 66; if (!blockedAt(px, pz, 1.6) && Math.hypot(px, pz) > 6 && Math.abs(px) > 4) pot(px, pz, 1.0); }
     townSkyline(R, 14, 4, [M.timber, M.brickRed, M.timber, M.brickRed], M.tileDark);
+    mountains(R, 9, [0x4f6a3e, 0x7e8a86]);
     skyClouds(R, 10);
     flushTown();
   }
@@ -3789,7 +3848,7 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
         var ud = d.g.userData, fall = Math.min(1, d.t / 2.6); landed = fall >= 1;
         d.g.position.y = 0.32 + 15 * (1 - fall) * (1 - fall * 0.35); ud.chute.visible = !landed; ud.chute.position.y = 0.4 + (landed ? 0 : 0.2); d.g.rotation.y = landed ? d.g.rotation.y : Math.sin(d.t * 1.7) * 0.25;
         ud.smoke.forEach(function (sp, k) {
-          var u = ((d.t * 0.3 + k / ud.smoke.length) % 1), s = 1.2 + u * 4.2; sp.position.set(Math.sin(d.t * 0.8 + k * 2.1) * 0.25 * u * 3, 0.5 + u * 6.5, Math.cos(d.t * 0.6 + k) * 0.2 * u * 3);
+          var u = ((d.t * 0.3 + k / ud.smoke.length) % 1), s = 1.6 + u * 4.6; sp.position.set(Math.sin(d.t * 0.8 + k * 2.1) * 0.3 * u * 3, 0.5 + u * 11, Math.cos(d.t * 0.6 + k) * 0.2 * u * 3);
           sp.scale.set(s, s, 1); sp.material.opacity = (landed ? 1.0 : 0.35) * Math.sin(Math.min(1, u * 1.2) * PI) * (d.life < 8 ? 0.6 : 1);
         });
         d.g.visible = d.life > 6 || Math.floor(d.t * 8) % 2 === 0;
@@ -3913,7 +3972,7 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
       u.mag.position.y = mo; u.mag.visible = vis;
     }
     var bob = Math.sin(bobT * 2) * 0.004 * Math.min(1, spd / 4);
-    gunGroup.position.set(0.2 - sprintAmt * 0.06 + swayX, -0.2 - rp * 0.2 + bob - sprintAmt * 0.05 + swayY, -0.45 + spr.z);
+    gunGroup.position.set(0.105 - sprintAmt * 0.06 + swayX, -0.185 - rp * 0.2 + bob - sprintAmt * 0.05 + swayY, -0.58 + spr.z);
     gunGroup.rotation.set(rp * 0.7 + spr.r + sprintAmt * 0.25 + (grounded ? 0 : 0.05), sprintAmt * 0.4 + swayX * 2, -rp * 0.3 + sprintAmt * 0.12 - swayX * 1.5);
   }
 
@@ -4593,7 +4652,7 @@ body.q-high.look-real #view { filter: contrast(1.06) saturate(0.9); }
       T0.maps = { ids: MAP_ORDER, MAPS: MAPS, load: loadMap, cur: function () { return curMap; }, spawns: function () { return SPAWNS; } };
       T0.sim = {
         newGame: newGame, update: update, spawn: spawnOne, enemies: function () { return enemies; }, fire: function (on) { fireHeld = on; fireEdge = 1; }, hud: drawHud, jump: function () { wantJump = true; },
-        stageOp: function () { return stageOp; }, spawnDrop: spawnDrop, setLook: function (v) { CDEF.look = v; }, drops: function () { return drops; }, sel: selectGun, stageSet: stageSetOp, detail: scatterDetail, model: buildOperatorModel, giveGun: giveGun, owned: function () { return owned; }, nextGun: nextGun, bossInfo: function () { return { max: bossMax, alive: bossAlive, ring: !!bossRing }; }, pl: function () { return player; }, mpCreate: mpCreate, mpJoin: mpJoin, mpStart: mpStart, mpLeave: mpLeave, mpTick: mpTick, mpDmg: function (e, b, z) { damageEnemy(e, b, z, new THREE.Vector3(e.x, 1, e.z), true); }, mpInfo: function () { return { on: mpOn, host: mpHost, client: mpClient, started: mp.started, down: mp.down, code: mp.code, uid: mp.uid, db: mp.db, avatars: Object.keys(mp.avatars), puppets: Object.keys(mp.puppets), targets: mp.targets.length, wave: wave, state: state, meta: mp.meta }; }, setUrl: function (u) { lsSet("ironvale-dburl", u); }, initAudio: initAudio, sfx: SFX, ambEvent: ambEvent, startAmbience: startAmbience, throwG: throwGrenade, useMed: useMed, spawnDrop: spawnDrop, setLook: function (v) { CDEF.look = v; }, drops: function () { return drops; }, getItems: function () { return { grenades: grenades, meds: meds, drops: drops, throwT: throwT, medT: medT, live: gPool.filter(function (g) { return g.userData.on; }).length }; }, setItems: function (g, m) { grenades = g; meds = m; }, keys: keys, asInfo: function () { return { t: asTarget, slow: asSlow }; }, twChip: twChip, DF: DF, botCap: botCap, tw: TW, twStart: twStart, twCollapse: twCollapse, twReset: twReset, twWaveEnd: twWaveEnd, scope: function (v) { scopeOn = v; }, scopeOn: function () { return scopeOn; }, upd: updateTower, getPy: function () { return py; }, setPy: function (v) { py = v; }, ctl: { apply: applyControls, CTL: CTL, edit: startCtlEdit, end: endCtlEdit, lefty: setLefty, reset: resetLayout }, guest: guestIn, cfg: CLOUD_CFG, cloudEnter: cloudEnter, save: saveDB, flush: function () { cloudFlush(false); }, cloudState: function () { return cloud; }, cloudResume: cloudResume, merge: cloudBackgroundMerge, signOut: function () { saveDB(); cloudSignOut(); prof = null; saveDB(); }, prof: function () { return prof; }, buy: buyMap, earn: earn, select: selectMap, deploy: deploy, toLobby: toLobby, gameOver: gameOver, refresh: refreshLobby, state: function () { return state; }
+        stageOp: function () { return stageOp; }, spawnDrop: spawnDrop, gun: function () { return gunGroup; }, cam: function () { return camera; }, setLook: function (v) { CDEF.look = v; }, drops: function () { return drops; }, sel: selectGun, stageSet: stageSetOp, detail: scatterDetail, model: buildOperatorModel, giveGun: giveGun, owned: function () { return owned; }, nextGun: nextGun, bossInfo: function () { return { max: bossMax, alive: bossAlive, ring: !!bossRing }; }, pl: function () { return player; }, mpCreate: mpCreate, mpJoin: mpJoin, mpStart: mpStart, mpLeave: mpLeave, mpTick: mpTick, mpDmg: function (e, b, z) { damageEnemy(e, b, z, new THREE.Vector3(e.x, 1, e.z), true); }, mpInfo: function () { return { on: mpOn, host: mpHost, client: mpClient, started: mp.started, down: mp.down, code: mp.code, uid: mp.uid, db: mp.db, avatars: Object.keys(mp.avatars), puppets: Object.keys(mp.puppets), targets: mp.targets.length, wave: wave, state: state, meta: mp.meta }; }, setUrl: function (u) { lsSet("ironvale-dburl", u); }, initAudio: initAudio, sfx: SFX, ambEvent: ambEvent, startAmbience: startAmbience, throwG: throwGrenade, useMed: useMed, spawnDrop: spawnDrop, gun: function () { return gunGroup; }, cam: function () { return camera; }, setLook: function (v) { CDEF.look = v; }, drops: function () { return drops; }, getItems: function () { return { grenades: grenades, meds: meds, drops: drops, throwT: throwT, medT: medT, live: gPool.filter(function (g) { return g.userData.on; }).length }; }, setItems: function (g, m) { grenades = g; meds = m; }, keys: keys, asInfo: function () { return { t: asTarget, slow: asSlow }; }, twChip: twChip, DF: DF, botCap: botCap, tw: TW, twStart: twStart, twCollapse: twCollapse, twReset: twReset, twWaveEnd: twWaveEnd, scope: function (v) { scopeOn = v; }, scopeOn: function () { return scopeOn; }, upd: updateTower, getPy: function () { return py; }, setPy: function (v) { py = v; }, ctl: { apply: applyControls, CTL: CTL, edit: startCtlEdit, end: endCtlEdit, lefty: setLefty, reset: resetLayout }, guest: guestIn, cfg: CLOUD_CFG, cloudEnter: cloudEnter, save: saveDB, flush: function () { cloudFlush(false); }, cloudState: function () { return cloud; }, cloudResume: cloudResume, merge: cloudBackgroundMerge, signOut: function () { saveDB(); cloudSignOut(); prof = null; saveDB(); }, prof: function () { return prof; }, buy: buyMap, earn: earn, select: selectMap, deploy: deploy, toLobby: toLobby, gameOver: gameOver, refresh: refreshLobby, state: function () { return state; }
       };
     }
     requestAnimationFrame(frame);
